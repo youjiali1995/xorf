@@ -37,6 +37,7 @@ rand = { version = "0.8", optional = true }
 criterion = "0.3.0"
 criterion-macro = "0.3.0"
 rand = "0.8"
+bincode = "1.3"
 
 [[bench]]
 name = "fuse16"
@@ -53,6 +54,11 @@ harness = false
 [[bench]]
 name = "xor8"
 harness = false
+
+[[bench]]
+name = "serde"
+harness = false
+required-features = ["serde"]
 
 [features]
 default = ["uniform-random", "binary-fuse"]
