@@ -268,7 +268,7 @@ macro_rules! bfuse_from_impl(
                 segment_length,
                 segment_length_mask,
                 segment_count_length,
-                fingerprints,
+                fingerprints: fingerprints.into(),
             })
         }
     };

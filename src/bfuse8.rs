@@ -2,11 +2,13 @@
 
 use crate::{bfuse_contains_impl, bfuse_from_impl, Filter};
 use alloc::{boxed::Box, vec::Vec};
-use core::{
-    convert::{TryFrom, TryInto},
-    mem,
-};
+use bytes::Bytes;
+use core::convert::TryFrom;
 
+#[cfg(feature = "serde")]
+use bytes::{Buf, BufMut};
+#[cfg(feature = "serde")]
+use core::mem;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -64,7 +66,7 @@ pub struct BinaryFuse8 {
     segment_length_mask: u32,
     segment_count_length: u32,
     /// The fingerprints for the filter
-    pub fingerprints: Box<[u8]>,
+    pub fingerprints: Bytes,
 }
 
 #[cfg(feature = "serde")]
@@ -72,31 +74,53 @@ impl BinaryFuse8 {
     const MIN_SERDE_SIZE: usize = mem::size_of::<u64>() + mem::size_of::<u32>() * 3;
 
     /// Serializes the `BinaryFuse8` to bytes.
-    pub fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_vec(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::MIN_SERDE_SIZE + self.fingerprints.len());
-        buf.extend(self.seed.to_le_bytes());
-        buf.extend(self.segment_length.to_le_bytes());
-        buf.extend(self.segment_length_mask.to_le_bytes());
-        buf.extend(self.segment_count_length.to_le_bytes());
-        buf.extend_from_slice(&*self.fingerprints);
+        buf.put_u64_le(self.seed);
+        buf.put_u32_le(self.segment_length);
+        buf.put_u32_le(self.segment_length_mask);
+        buf.put_u32_le(self.segment_count_length);
+        buf.extend_from_slice(self.fingerprints.chunk());
         buf
     }
 
-    /// Deserializes a `BinaryFuse8` from bytes.
-    pub fn try_from_bytes(data: &[u8]) -> Result<BinaryFuse8, &'static str> {
+    /// Deserializes a `BinaryFuse8` from `&[u8]`.
+    pub fn try_from_slice(mut data: &[u8]) -> Result<Self, &'static str> {
         if data.len() < Self::MIN_SERDE_SIZE {
             return Err("data too short");
         }
-        let seed = u64::from_le_bytes(data[..8].try_into().unwrap());
-        let segment_length = u32::from_le_bytes((data[8..12]).try_into().unwrap());
-        let segment_length_mask = u32::from_le_bytes((data[12..16]).try_into().unwrap());
-        let segment_count_length = u32::from_le_bytes((data[16..20]).try_into().unwrap());
+        let seed = data.get_u64_le();
+        let segment_length = data.get_u32_le();
+        let segment_length_mask = data.get_u32_le();
+        let segment_count_length = data.get_u32_le();
+        let fingerprints = Bytes::from(data.to_vec());
         Ok(Self {
             seed,
             segment_length,
             segment_length_mask,
             segment_count_length,
-            fingerprints: data[20..].to_vec().into_boxed_slice(),
+            fingerprints,
+        })
+    }
+
+    /// Deserializes a `BinaryFuse8` from `Bytes` which can avoid allocating and coping the
+    /// fingerprints.
+    pub fn try_from_bytes(data: &Bytes) -> Result<Self, &'static str> {
+        if data.len() < Self::MIN_SERDE_SIZE {
+            return Err("data too short");
+        }
+        let mut data = data.clone();
+        let seed = data.get_u64_le();
+        let segment_length = data.get_u32_le();
+        let segment_length_mask = data.get_u32_le();
+        let segment_count_length = data.get_u32_le();
+        let fingerprints = data;
+        Ok(Self {
+            seed,
+            segment_length,
+            segment_length_mask,
+            segment_count_length,
+            fingerprints,
         })
     }
 }
@@ -196,7 +220,7 @@ mod test {
         let _ = BinaryFuse8::try_from(vec![1, 2, 1]);
     }
 
-    #[cfg(feature = "binary-fuse8-custom-serde")]
+    #[cfg(feature = "serde")]
     #[test]
     fn test_custom_serde() {
         const SAMPLE_SIZE: usize = 1_000;
@@ -204,8 +228,15 @@ mod test {
         let keys: Vec<u64> = (0..SAMPLE_SIZE).map(|_| rng.gen()).collect();
 
         let filter = BinaryFuse8::try_from(&keys).unwrap();
-        let encoded = filter.to_bytes();
-        let decoded = BinaryFuse8::try_from_bytes(&encoded).unwrap();
+        let encoded = filter.to_vec();
+        let decoded = BinaryFuse8::try_from_slice(&encoded).unwrap();
+        assert_eq!(decoded.seed, filter.seed);
+        assert_eq!(decoded.segment_length, filter.segment_length);
+        assert_eq!(decoded.segment_length_mask, filter.segment_length_mask);
+        assert_eq!(decoded.segment_count_length, filter.segment_count_length);
+        assert_eq!(decoded.fingerprints, filter.fingerprints);
+
+        let decoded = BinaryFuse8::try_from_bytes(&encoded.into()).unwrap();
         assert_eq!(decoded.seed, filter.seed);
         assert_eq!(decoded.segment_length, filter.segment_length);
         assert_eq!(decoded.segment_length_mask, filter.segment_length_mask);
