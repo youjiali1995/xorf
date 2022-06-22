@@ -19,11 +19,15 @@ fn custom(c: &mut Criterion) {
     let filter = BinaryFuse8::try_from(&keys).unwrap();
 
     group.bench_function("serialize", |b| {
-        b.iter(|| black_box(filter.to_bytes()));
+        b.iter(|| black_box(filter.to_vec()));
     });
 
-    let encoded = filter.to_bytes();
-    group.bench_function("deserialize", |b| {
+    let encoded = filter.to_vec();
+    group.bench_function("deserialize-from-slice", |b| {
+        b.iter(|| black_box(BinaryFuse8::try_from_slice(&encoded).unwrap()));
+    });
+    let encoded = encoded.into();
+    group.bench_function("deserialize-from-bytes", |b| {
         b.iter(|| black_box(BinaryFuse8::try_from_bytes(&encoded).unwrap()));
     });
     group.finish();
