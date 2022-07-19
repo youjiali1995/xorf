@@ -243,4 +243,11 @@ mod test {
         assert_eq!(decoded.segment_count_length, filter.segment_count_length);
         assert_eq!(decoded.fingerprints, filter.fingerprints);
     }
+
+    #[test]
+    fn test_build_failure_with_subtraction_overflow() {
+        let key = rand::random();
+        let filter = BinaryFuse8::try_from(vec![key]).unwrap();
+        assert!(filter.contains(&key));
+    }
 }
